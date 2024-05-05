@@ -460,4 +460,15 @@ void Screen::normalDrawDeviceMessage(String message, bool isError) {
     btememorycopy(2,0,0,1,0,0,480,272);
 }
 
+void Screen::normalDrawMenu(uint16_t key){
+    memorytolayer(2);
 
+    _tft.fillRect(100, 120, 480, 160, RA8875_BLACK);
+    _u8g2.setForegroundColor(RA8875_RED);
+    _u8g2.setBackgroundColor(RA8875_BLACK);
+    _u8g2.setCursor(100, 160);
+    _u8g2.setFont(cht_font_24);
+    _u8g2.print(key);
+
+    btememorycopy(2,0,0,1,0,0,480,272);
+}

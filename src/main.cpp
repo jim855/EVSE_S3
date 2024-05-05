@@ -13,6 +13,7 @@
 #include <ArduinoJson.h>
 #include <Adafruit_MCP9808.h>
 #include <ZMPT101B.h>
+#include "Adafruit_MCP23008.h"
 // 自己管的部分
 #include <MFRC522_I2C.h>
 #include <buzzer.h>
@@ -30,10 +31,10 @@ Screen scr = Screen(LCD_CS, LCD_RST, LCD_SCK, LCD_MISO, LCD_MOSI);
 Adafruit_MCP9808 tempSensor;
 Setting setting;
 String eth_ip, eth_mac;
-MFRC522 mfrc522(0x28, 0x28);
 File RFID_DATA;
 Buzzer buzzer = Buzzer(BEEPER,PWMCHANNEL,RESOLUTION);
-ZMPT101B voltageSensor1(voltage_sensor,60);
+Adafruit_MCP23008 mcp;
+sensors_event_t event;
 unsigned long lock_countdown=0;
 uint32_t next_status = 0;
 
@@ -66,171 +67,326 @@ void IRAM_ATTR EM() {
   */
 }
 
-void apiHandleOn() {
-  rapiSender.sendCmd("$FE");
-  log_e("form EMS: 允許充電");
-  isLocked = false;
-  server.send(200, F("application/json"), F("{ \"eves_status\": \"On\" }"));
-}
+// void apiHandleOn() {
+//   rapiSender.sendCmd("$FE");
+//   log_e("form EMS: 允許充電");
+//   isLocked = false;
+//   server.send(200, F("application/json"), F("{ \"eves_status\": \"On\" }"));
+// }
 
-void apiHandleOff() {
-  rapiSender.sendCmd("$FD");
-  log_e("form EMS: 停止充電");
-  isLocked = true;
-  server.send(200, F("application/json"), F("{ \"eves_status\": \"Off\" }"));
+// void apiHandleOff() {
+//   rapiSender.sendCmd("$FD");
+//   log_e("form EMS: 停止充電");
+//   isLocked = true;
+//   server.send(200, F("application/json"), F("{ \"eves_status\": \"Off\" }"));
 
-}
+// }
 
-void apiHandleInfo() {
-  String result = "{";
-  result = result + "\"amps\":" + String(lastAmps) + ",";
-  result = result + "\"volts\":" + String(lastVolts) + ",";
-  result = result + "\"maxapms\":" + String(maxAmps) + ",";
-  result = result + "\"charging\":\"" + (lastIsCharging? "true":"false") + "\","; 
-  result = result + "\"plugged\":\"" + (lastIsConnected ? "true": "false") + "\","; 
-  result = result + "\"locked\":\"" + (isLocked ? "true": "false") + "\",";
-  result = result + "\"card\":\"" + lastAuthenCard + "\",";
-  result = result + "\"hostname\":\"" + setting.name + "\",";
-  result = result + "\"ipaddr\":\"" + eth_ip + "\",";
-  result = result + "\"mac\":\"" + eth_mac + "\",";
-  result = result + "\"evseVersion\":\"" + evseVersion + "\",";
-  result = result + "\"evseProtocol\":\"" + evseProtocol + "\",";
-  result = result + "\"controllerVersion\":\"" + controllerVersion + "\"";
-  result = result + "}";
+// void apiHandleInfo() {
+//   String result = "{";
+//   result = result + "\"amps\":" + String(lastAmps) + ",";
+//   result = result + "\"volts\":" + String(lastVolts) + ",";
+//   result = result + "\"maxapms\":" + String(maxAmps) + ",";
+//   result = result + "\"charging\":\"" + (lastIsCharging? "true":"false") + "\","; 
+//   result = result + "\"plugged\":\"" + (lastIsConnected ? "true": "false") + "\","; 
+//   result = result + "\"locked\":\"" + (isLocked ? "true": "false") + "\",";
+//   result = result + "\"card\":\"" + lastAuthenCard + "\",";
+//   result = result + "\"hostname\":\"" + setting.name + "\",";
+//   result = result + "\"ipaddr\":\"" + eth_ip + "\",";
+//   result = result + "\"mac\":\"" + eth_mac + "\",";
+//   result = result + "\"evseVersion\":\"" + evseVersion + "\",";
+//   result = result + "\"evseProtocol\":\"" + evseProtocol + "\",";
+//   result = result + "\"controllerVersion\":\"" + controllerVersion + "\"";
+//   result = result + "}";
 
-  server.send(200, F("application/json"), result);
-}
+//   server.send(200, F("application/json"), result);
+// }
 
-void apiAuth() {
-  String cardUuid = server.pathArg(0);
-  log_e("Form EMS : Authen by CardID: %s", cardUuid);
-  rapiSender.sendCmd("$S4 0");
-  server.send(200, F("application/json"), F("{ \"auth_status\": \"Unlocked\" }"));
-  epochValidUntil = (millis()/1000) + 180;
-}
+// void apiAuth() {
+//   String cardUuid = server.pathArg(0);
+//   log_e("Form EMS : Authen by CardID: %s", cardUuid);
+//   rapiSender.sendCmd("$S4 0");
+//   server.send(200, F("application/json"), F("{ \"auth_status\": \"Unlocked\" }"));
+//   epochValidUntil = (millis()/1000) + 180;
+// }
 
-void apiUnauth() {
-  //String cardUuid = server.pathArg(0);
-  //log_e("Authen by CardID: %s", cardUuid);
-  log_e("Form EMS : card_auth is failed");
-  rapiSender.sendCmd("$S4 1");
-  epochValidUntil = 0;
-  server.send(200, F("application/json"), F("{ \"auth_status\": \"Locked\" }"));
-}
+// void apiUnauth() {
+//   //String cardUuid = server.pathArg(0);
+//   //log_e("Authen by CardID: %s", cardUuid);
+//   log_e("Form EMS : card_auth is failed");
+//   rapiSender.sendCmd("$S4 1");
+//   epochValidUntil = 0;
+//   server.send(200, F("application/json"), F("{ \"auth_status\": \"Locked\" }"));
+// }
 
-void apiHandleGetAmps() {
-  double curAmps = lastAmps;
-  String output = " {\"amps\":" + String(curAmps) +  "}";
-  server.send(200, F("application/json"), output);
-}
+// void apiHandleGetAmps() {
+//   double curAmps = lastAmps;
+//   String output = " {\"amps\":" + String(curAmps) +  "}";
+//   server.send(200, F("application/json"), output);
+// }
 
-void apiHandleGetVolts() {
-  double curVolts = lastVolts;
-  String output = " {\"volts\":" + String(curVolts) +  "}";
-  server.send(200, F("application/json"), output);
-}
+// void apiHandleGetVolts() {
+//   double curVolts = lastVolts;
+//   String output = " {\"volts\":" + String(curVolts) +  "}";
+//   server.send(200, F("application/json"), output);
+// }
 
-void apiHandleAmp() {
-  //String user = server.pathArg(0);
-  String amps = server.pathArg(0);
-  log_e("From EMS : Turn Amp to %s", amps);
-  String cmd = "$SC "+ amps + " V";
-  rapiSender.sendCmd(cmd);
-  server.send(200, F("application/json"), F("{ \"message\": \"done\" }"));
-}
+// void apiHandleAmp() {
+//   //String user = server.pathArg(0);
+//   String amps = server.pathArg(0);
+//   log_e("From EMS : Turn Amp to %s", amps);
+//   String cmd = "$SC "+ amps + " V";
+//   rapiSender.sendCmd(cmd);
+//   server.send(200, F("application/json"), F("{ \"message\": \"done\" }"));
+// }
 
 
-void apiHandleClearConfig() {
-  SPIFFS.begin(true);
-  if (SPIFFS.exists("/setting")) {
-    SPIFFS.remove("/setting");
-    log_e("Form EMS : Clear config");
+// void apiHandleClearConfig() {
+//   SPIFFS.begin(true);
+//   if (SPIFFS.exists("/setting")) {
+//     SPIFFS.remove("/setting");
+//     log_e("Form EMS : Clear config");
+//   }
+//   SPIFFS.end();
+//   server.send(200, F("application/json"), F("{ \"message\": \"done\" }"));
+//   log_e("Delay 5 secs to reboot");
+//   vTaskDelay(5000);
+//   ESP.restart();
+// }
+
+// void apiHandleListTags() {
+//   String tags[10];
+//   int cnt=0;
+//   // [ "aaa", "bbb" ]
+//   for (int x=0; x<10; x++) {
+//     if (setting.validTag[x].length() == 0) {
+//       log_e("[ListTag] Tag %d is empty", x);
+//     } else {
+//       log_e("[ListTag] Tag %d is %s", x, setting.validTag[x]);
+//       tags[cnt] = "\"" + setting.validTag[x] + "\"";
+//       cnt++;
+//     }
+//   }
+//   String result= "[";
+//   for (int x=0; x<cnt; x++) {
+//     result = result + tags[x];
+//     if (x!=cnt-1) {
+//       result = result + ",";
+//     }
+//   }
+//   result = result + "]";
+//   server.send(200, F("application/json"), result);
+// }
+
+// void apiHandleAddTag() {
+//   String uuid = server.pathArg(0);
+//   int realCnt=0;
+//   for (int x=0; x<10; x++) {
+//     if (setting.validTag[x].length() == 0) {
+//       log_e("[ListTag] Tag %d is empty", x);
+//       setting.validTag[x] = uuid;
+//       break;
+//     }
+//     realCnt++;
+//   }
+//   writeConfig();
+//   log_e("Form EMS : AddTag , CardID: %s", uuid);
+//   server.send(200, F("application/json"), F("{ \"message\": \"done\" }"));
+// }
+
+// void apiHandleDelTag() {
+//   String uuid = server.pathArg(0);
+//   for (int x=0; x<10; x++) {
+//     if (setting.validTag[x].length() != 0) {
+//       if (setting.validTag[x] == uuid) {
+//         setting.validTag[x]="";
+//       }
+//     }
+//   }
+//   writeConfig();
+//   log_e("Form EMS : DelTag , CardID: %s", uuid);
+//   server.send(200, F("application/json"), F("{ \"message\": \"done\" }"));
+// }
+
+// void apiHandleSetName() {
+//   String name = server.pathArg(0);
+//   setting.name = name;
+//   writeConfig();
+//   log_e("Form EMS : SetName , Name: %s", name);
+//   server.send(200, F("application/json"), F("{ \"message\": \"done\" }"));
+//   vTaskDelay(5000);
+//   ESP.restart();
+// }
+
+// void apiHandleRecord() {
+//   rapiSender.sendCmd("$FE");
+//   log_e("[Record] Enabled by flush records");
+//   locRec.dumpRecords();
+//   lastConnectTime = (millis()/1000);
+//   server.send(200, F("application/json"), locRec.getJsonRecords());
+// }
+
+
+uint16_t keyscan() {
+
+  mcp.pinMode(7, INPUT);
+  mcp.pullUp(7, HIGH);
+
+  uint16_t thekey = 0x0000;
+  uint8_t readGPIO = 0x00;
+  //COL1
+  mcp.pinMode(0, OUTPUT);
+  mcp.pullUp(0, LOW);
+  mcp.pinMode(1, INPUT);
+  mcp.pullUp(1, HIGH);
+  mcp.pinMode(2, INPUT);
+  mcp.pullUp(2, HIGH);
+  mcp.pinMode(3, INPUT);
+  mcp.pullUp(3, HIGH);
+
+  mcp.pinMode(4, INPUT);
+  mcp.pullUp(4, HIGH);
+  mcp.pinMode(5, INPUT);
+  mcp.pullUp(5, HIGH);
+  mcp.pinMode(6, INPUT);
+  mcp.pullUp(6, HIGH);
+
+  readGPIO = mcp.readGPIO();
+
+  if((readGPIO | 0xe0) == 0xee){
+    thekey = thekey | 0x01;
   }
-  SPIFFS.end();
-  server.send(200, F("application/json"), F("{ \"message\": \"done\" }"));
-  log_e("Delay 5 secs to reboot");
-  vTaskDelay(5000);
-  ESP.restart();
-}
 
-void apiHandleListTags() {
-  String tags[10];
-  int cnt=0;
-  // [ "aaa", "bbb" ]
-  for (int x=0; x<10; x++) {
-    if (setting.validTag[x].length() == 0) {
-      log_e("[ListTag] Tag %d is empty", x);
-    } else {
-      log_e("[ListTag] Tag %d is %s", x, setting.validTag[x]);
-      tags[cnt] = "\"" + setting.validTag[x] + "\"";
-      cnt++;
-    }
+  if((readGPIO | 0xd0) == 0xde)
+  {
+    thekey = thekey | 0x02;
   }
-  String result= "[";
-  for (int x=0; x<cnt; x++) {
-    result = result + tags[x];
-    if (x!=cnt-1) {
-      result = result + ",";
-    }
+
+  if((readGPIO | 0xb0) == 0xbe)
+  {
+    thekey = thekey | 0x04;
   }
-  result = result + "]";
-  server.send(200, F("application/json"), result);
-}
+  //log_e("GPIO 1 READ: %x",readGPIO);
 
-void apiHandleAddTag() {
-  String uuid = server.pathArg(0);
-  int realCnt=0;
-  for (int x=0; x<10; x++) {
-    if (setting.validTag[x].length() == 0) {
-      log_e("[ListTag] Tag %d is empty", x);
-      setting.validTag[x] = uuid;
-      break;
-    }
-    realCnt++;
+  //COL2
+  mcp.pinMode(0, INPUT);
+  mcp.pullUp(0, HIGH);
+  mcp.pinMode(1, OUTPUT);
+  mcp.pullUp(1, LOW);
+  mcp.pinMode(2, INPUT);
+  mcp.pullUp(2, HIGH);
+  mcp.pinMode(3, INPUT);
+  mcp.pullUp(3, HIGH);
+
+  mcp.pinMode(4, INPUT);
+  mcp.pullUp(4, HIGH);
+  mcp.pinMode(5, INPUT);
+  mcp.pullUp(5, HIGH);
+  mcp.pinMode(6, INPUT);
+  mcp.pullUp(6, HIGH);
+
+  readGPIO = mcp.readGPIO();
+  
+  if((readGPIO | 0xe0) == 0xed){
+    thekey = thekey | 0x08;
   }
-  writeConfig();
-  log_e("Form EMS : AddTag , CardID: %s", uuid);
-  server.send(200, F("application/json"), F("{ \"message\": \"done\" }"));
-}
-
-void apiHandleDelTag() {
-  String uuid = server.pathArg(0);
-  for (int x=0; x<10; x++) {
-    if (setting.validTag[x].length() != 0) {
-      if (setting.validTag[x] == uuid) {
-        setting.validTag[x]="";
-      }
-    }
+  
+  if((readGPIO | 0xd0) == 0xdd)
+  {
+    thekey = thekey | 0x10;
   }
-  writeConfig();
-  log_e("Form EMS : DelTag , CardID: %s", uuid);
-  server.send(200, F("application/json"), F("{ \"message\": \"done\" }"));
+  
+  if((readGPIO | 0xb0) == 0xbd)
+  {
+    thekey = thekey | 0x20;
+  }
+
+  //log_e("GPIO 2 READ: %x",readGPIO);
+  //COL3
+  mcp.pinMode(0, INPUT);
+  mcp.pullUp(0, HIGH);
+  mcp.pinMode(1, INPUT);
+  mcp.pullUp(1, HIGH);
+  mcp.pinMode(2, OUTPUT);
+  mcp.pullUp(2, LOW);
+  mcp.pinMode(3, INPUT);
+  mcp.pullUp(3, HIGH);
+
+  mcp.pinMode(4, INPUT);
+  mcp.pullUp(4, HIGH);
+  mcp.pinMode(5, INPUT);
+  mcp.pullUp(5, HIGH);
+  mcp.pinMode(6, INPUT);
+  mcp.pullUp(6, HIGH);
+
+  readGPIO = mcp.readGPIO();
+
+  if((readGPIO | 0xe0) == 0xeb){
+    thekey = thekey | 0x40;
+  }
+  
+  if((readGPIO | 0xd0) == 0xdb)
+  {
+    thekey = thekey | 0x80;
+  }
+  
+  if((readGPIO | 0xb0) == 0xbb)
+  {
+    thekey = thekey | 0x100;
+  }
+
+  //COL4
+  mcp.pinMode(0, INPUT);
+  mcp.pullUp(0, HIGH);
+  mcp.pinMode(1, INPUT);
+  mcp.pullUp(1, HIGH);
+  mcp.pinMode(2, INPUT);
+  mcp.pullUp(2, HIGH);
+  mcp.pinMode(3, OUTPUT);
+  mcp.pullUp(3, LOW);
+
+  mcp.pinMode(4, INPUT);
+  mcp.pullUp(4, HIGH);
+  mcp.pinMode(5, INPUT);
+  mcp.pullUp(5, HIGH);
+  mcp.pinMode(6, INPUT);
+  mcp.pullUp(6, HIGH);
+
+  readGPIO = mcp.readGPIO();
+
+  if((readGPIO | 0xe0) == 0xe7){
+    thekey = thekey | 0x200;
+  }
+  
+  if((readGPIO | 0xd0) == 0xd7)
+  {
+    thekey = thekey | 0x400;
+  }
+  
+  if((readGPIO | 0xb0) == 0xb7)
+  {
+    thekey = thekey | 0x800;
+  }
+
+  //log_e("GPIO 3 READ: %x",readGPIO);
+
+  //log_e("GPIO READ: %x",mcp.readGPIO());
+
+  //log_e("thekey is : %d", thekey);
+  //printBinary(thekey);
+  //log_e("GPIO READ: %x",mcp.readGPIO());
+  //log_e("KEYSCAN IS: %x",thekey);
+
+  return thekey;
 }
 
-void apiHandleSetName() {
-  String name = server.pathArg(0);
-  setting.name = name;
-  writeConfig();
-  log_e("Form EMS : SetName , Name: %s", name);
-  server.send(200, F("application/json"), F("{ \"message\": \"done\" }"));
-  vTaskDelay(5000);
-  ESP.restart();
-}
-
-void apiHandleRecord() {
-  rapiSender.sendCmd("$FE");
-  log_e("[Record] Enabled by flush records");
-  locRec.dumpRecords();
-  lastConnectTime = (millis()/1000);
-  server.send(200, F("application/json"), locRec.getJsonRecords());
-}
 
 void setup()
 {
   Serial.begin(115200);
   Serial1.begin(ATMEGA32_BAUD, SERIAL_8N1, ATMEGA32_RX, ATMEGA32_TX);
-  while (!Serial && millis() < 5000);
-    delay(500);
+  // while (!Serial && millis() < 5000);
+  //   delay(500);
   scr.begin(RA8875_480x272);
 
   //rapiSender.sendCmd("$FD");
@@ -257,6 +413,7 @@ void setup()
   scr.bootDrawStatu("設定序列通訊");
   vTaskDelay(100);
   Wire.begin(RFID_SDA, RFID_SCL);
+  mcp.begin(0x20);
   log_e("[Setup] Starting I2C scan:");
   for (byte i = 8; i < 128; i++)
   {
@@ -272,117 +429,114 @@ void setup()
   
   scr.bootDrawStatu("設定RFID");
   vTaskDelay(100);
-  mfrc522.PCD_Init();
 
   scr.bootDrawStatu("設定溫度傳感器");
   vTaskDelay(100);
   tempSensor.begin();
 
-  //scr.bootDrawStatu("設定電壓量測器");
-  voltageSensor1.setSensitivity(720.0f);
 
   digitalWrite(LED1,LOW);
   digitalWrite(LED2,LOW);
   
   // 預先處理 mac
-  uint64_t chipId = ESP.getEfuseMac();
-  byte mac[] = {0xDE, 0xAD, 0xBE, 0, 0, 0};
-  mac[5] = 0xFF & (chipId >> 24);
-  mac[4] = 0xFF & (chipId >> 32);
-  mac[3] = 0xFF & (chipId >> 40);
-  char hostname[12];
-  sprintf(hostname, "EVSE_%02x%02x%02x", mac[3], mac[4], mac[5]);
+  // uint64_t chipId = ESP.getEfuseMac();
+  // byte mac[] = {0xDE, 0xAD, 0xBE, 0, 0, 0};
+  // mac[5] = 0xFF & (chipId >> 24);
+  // mac[4] = 0xFF & (chipId >> 32);
+  // mac[3] = 0xFF & (chipId >> 40);
+  // char hostname[12];
+  // sprintf(hostname, "EVSE_%02x%02x%02x", mac[3], mac[4], mac[5]);
 
-  scr.bootDrawStatu("設定檔案系統");
-  vTaskDelay(100);
-  log_e("[Setup] SPIFFS Init");
-  if (!SPIFFS.begin(true)) {
-    log_e("[Setup] SPIFFS failed");
-    return;
-  }
-  log_e("[Setup] SPIFFS Inited");
+  // scr.bootDrawStatu("設定檔案系統");
+  // vTaskDelay(100);
+  // log_e("[Setup] SPIFFS Init");
+  // if (!SPIFFS.begin(true)) {
+  //   log_e("[Setup] SPIFFS failed");
+  //   return;
+  // }
+  // log_e("[Setup] SPIFFS Inited");
   
-  scr.bootDrawStatu("讀取設定值");
-  vTaskDelay(100);
-  if (!SPIFFS.exists("/setting")) {
-    // First time;
-    log_e("[Setup] Init setting files");
-    char buf[5];
-    setting.name = hostname;
-    File settingFile = SPIFFS.open("/setting", "wb+");
-    if (!settingFile) {
-      log_e("[Setup] Setting file open failed");
-      return;
-    }
-    settingFile.write((byte*) &setting, sizeof(setting));
-    settingFile.close();
-  } 
-  log_e("[Setup] Read setting file");
-  File settingFile = SPIFFS.open("/setting", "rb");
+  // scr.bootDrawStatu("讀取設定值");
+  // vTaskDelay(100);
+  // if (!SPIFFS.exists("/setting")) {
+  //   // First time;
+  //   log_e("[Setup] Init setting files");
+  //   char buf[5];
+  //   setting.name = hostname;
+  //   File settingFile = SPIFFS.open("/setting", "wb+");
+  //   if (!settingFile) {
+  //     log_e("[Setup] Setting file open failed");
+  //     return;
+  //   }
+  //   settingFile.write((byte*) &setting, sizeof(setting));
+  //   settingFile.close();
+  // } 
+  // log_e("[Setup] Read setting file");
+  // File settingFile = SPIFFS.open("/setting", "rb");
 
-  settingFile.readBytes((char*) &setting, sizeof(setting));
-  settingFile.close();
-  log_e("[Setup] Hostname: %s", setting.name);
+  // settingFile.readBytes((char*) &setting, sizeof(setting));
+  // settingFile.close();
+  // log_e("[Setup] Hostname: %s", setting.name);
   
-  SPIFFS.end();
+  // SPIFFS.end();
 
-  locRec.init();
-  locRec.readFile();
+  // locRec.init();
+  // locRec.readFile();
 
-  scr.bootDrawStatu("設定網路卡");
-  vTaskDelay(100);
+  // scr.bootDrawStatu("設定網路卡");
+  // vTaskDelay(100);
 
-  log_e("[Setup] ESP32 WiFi Mac: %012llx", chipId);
-  log_e("[Setup] W5500 Mac: %02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-  log_e("[Setup] W5500 Init");
+  // log_e("[Setup] ESP32 WiFi Mac: %012llx", chipId);
+  // log_e("[Setup] W5500 Mac: %02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  // log_e("[Setup] W5500 Init");
   
-  ESP32_W5500_onEvent();
-  log_e("[Setup] W5500 onEvent done");
-  ETH.begin(ETH_MISO, ETH_MOSI, ETH_SCK, ETH_CS, ETH_INT, 25, 2, mac);
+  // ESP32_W5500_onEvent();
+  // log_e("[Setup] W5500 onEvent done");
+  // ETH.begin(ETH_MISO, ETH_MOSI, ETH_SCK, ETH_CS, ETH_INT, 25, 2, mac);
   
-  log_e("[Setup] Hostname: %s", setting.name);
-  ETH.setHostname((setting.name.c_str()));
-  log_e("[Setup] W5500 begin done");
+  // log_e("[Setup] Hostname: %s", setting.name);
+  // ETH.setHostname((setting.name.c_str()));
+  // log_e("[Setup] W5500 begin done");
 
-  scr.bootDrawStatu("取得IP....");
-  vTaskDelay(100);
-  ESP32_W5500_waitForConnect();
-  eth_ip = IpAddress2String(ETH.localIP());
-  eth_mac = ETH.macAddress();
+  // scr.bootDrawStatu("取得IP....");
+  // vTaskDelay(100);
+  // ESP32_W5500_waitForConnect();
+  // eth_ip = IpAddress2String(ETH.localIP());
+  // eth_mac = ETH.macAddress();
 
-  log_e("[Setup] W5500 Final Status");
-  log_e("[Setup] \tIP Addr: %s", IpAddress2String(ETH.localIP()));
-  log_e("[Setup] \tSubnet: %s", IpAddress2String(ETH.subnetMask()));
-  log_e("[Setup] \tGateway: %s", IpAddress2String(ETH.gatewayIP()));
-  log_e("[Setup] \tDNS: %s", IpAddress2String(ETH.dnsIP()));
+  // log_e("[Setup] W5500 Final Status");
+  // log_e("[Setup] \tIP Addr: %s", IpAddress2String(ETH.localIP()));
+  // log_e("[Setup] \tSubnet: %s", IpAddress2String(ETH.subnetMask()));
+  // log_e("[Setup] \tGateway: %s", IpAddress2String(ETH.gatewayIP()));
+  // log_e("[Setup] \tDNS: %s", IpAddress2String(ETH.dnsIP()));
 
-  scr.bootDrawStatu("起始網路對時");
-  //configTime(28800, 3600, "time.stdtime.gov.tw");
-  vTaskDelay(100);
+  // scr.bootDrawStatu("起始網路對時");
+  // //configTime(28800, 3600, "time.stdtime.gov.tw");
+  // vTaskDelay(100);
 
-  scr.bootDrawStatu("起始服務綁定");
-  vTaskDelay(100);
+  // scr.bootDrawStatu("起始服務綁定");
+  // vTaskDelay(100);
 
-  server.on(F("/turnOff"), apiHandleOff);
-  server.on(F("/turnOn"), apiHandleOn);
-  server.on(F("/info"), apiHandleInfo);
-  server.on(F("/record"), apiHandleRecord);
+  // server.on(F("/turnOff"), apiHandleOff);
+  // server.on(F("/turnOn"), apiHandleOn);
+  // server.on(F("/info"), apiHandleInfo);
+  // server.on(F("/record"), apiHandleRecord);
 
-  server.on(UriBraces("/auth/{}"), apiAuth);
-  server.on(F("/unauth"), apiUnauth);
+  // server.on(UriBraces("/auth/{}"), apiAuth);
+  // server.on(F("/unauth"), apiUnauth);
 
-  server.on(F("/getAmps"), apiHandleGetAmps);
-  server.on(F("/getVolts"), apiHandleGetVolts);
+  // server.on(F("/getAmps"), apiHandleGetAmps);
+  // server.on(F("/getVolts"), apiHandleGetVolts);
 
-  server.on(UriBraces("/amp/{}"), apiHandleAmp);
-  server.on(F("/listTags"), apiHandleListTags);
-  server.on(UriBraces("/addTag/{}"), apiHandleAddTag);
-  server.on(UriBraces("/delTag/{}"), apiHandleDelTag);
-  server.on(UriBraces("/setName/{}"), apiHandleSetName);
+  // server.on(UriBraces("/amp/{}"), apiHandleAmp);
+  // server.on(F("/listTags"), apiHandleListTags);
+  // server.on(UriBraces("/addTag/{}"), apiHandleAddTag);
+  // server.on(UriBraces("/delTag/{}"), apiHandleDelTag);
+  // server.on(UriBraces("/setName/{}"), apiHandleSetName);
 
 
-  server.on(F("/clearConfig"), apiHandleClearConfig);
-  server.begin();
+  // server.on(F("/clearConfig"), apiHandleClearConfig);
+  // server.begin();
 
   scr.bootDrawStatu("起始緊急開關綁定");
   vTaskDelay(100);
@@ -400,189 +554,190 @@ void setup()
 
 void loop()
 {
-  server.handleClient();
-  rapiSender.loop();
+  // server.handleClient();
+  // rapiSender.loop();
 
-  if(millis() > next_status)
-  {
-    next_status = millis() + POLL_TIME;
-    if(OpenEVSE.isConnected())
-    {
+  // if(millis() > next_status)
+  // {
+  //   next_status = millis() + POLL_TIME;
+  //   if(OpenEVSE.isConnected())
+  //   {
 
-      OpenEVSE.getStatus([](int ret, uint8_t evse_state, uint32_t session_time, uint8_t pilot_state, uint32_t vflags)
-      {
-        if(RAPI_RESPONSE_OK == ret)
-        {
-          if(evse_state==OPENEVSE_STATE_CHARGING){
-            digitalWrite(LED2,HIGH);
-          }
-          else
-          {
-            digitalWrite(LED2,LOW);
-          }
-          String state_msg;
-          bool failed = false;
-          isCharging = false;
-          switch (evse_state) {
-            case OPENEVSE_STATE_STARTING:
-              state_msg = "開機中...."; break;
-            case OPENEVSE_STATE_NOT_CONNECTED:
-              state_msg = "車輛未連接"; 
-              isConnected = false;
-              break;
-            case OPENEVSE_STATE_CONNECTED:
-              state_msg = "車輛已連接"; 
-              isConnected = true;
-              break;
-            case OPENEVSE_STATE_CHARGING:
-              state_msg = "車輛充電中"; 
-              isCharging = true;
-              break;
-            case OPENEVSE_STATE_VENT_REQUIRED:
-              state_msg = "車輛需要放電"; break;
-            case OPENEVSE_STATE_DIODE_CHECK_FAILED:
-              state_msg = "Diode檢查失敗";
-              failed = true;
-              break;
-            case OPENEVSE_STATE_GFI_FAULT:
-              state_msg = "GFI檢查失敗";
-              failed = true;
-              break;
-            case OPENEVSE_STATE_NO_EARTH_GROUND:
-              state_msg = "接地檢查失敗";
-              failed = true;
-              break;
-            case OPENEVSE_STATE_STUCK_RELAY:
-              state_msg = "繼電器阻塞";
-              failed = true;
-              break;
-            case OPENEVSE_STATE_GFI_SELF_TEST_FAILED:
-              state_msg = "GFI自檢失敗";
-              failed = true;
-              break;
-            case OPENEVSE_STATE_OVER_TEMPERATURE:
-              state_msg = "溫度過高";
-              failed = true;
-              break;
-            case OPENEVSE_STATE_OVER_CURRENT:
-              state_msg = "電流過高";
-              failed = true;
-              break;
-            case OPENEVSE_STATE_SLEEPING:
-              state_msg = "睡眠中"; break;
-            case OPENEVSE_STATE_DISABLED:
-              state_msg = "設備已鎖定"; break;
-            default:
-              state_msg = "不明的狀態";
-              failed = true;
-              break;
-          }
-          if (failed) {
-            log_e("發生錯誤");
-            rapiSender.sendCmd("$FD");
-            scr.bootDrawFrame();
-            scr.bootDrawError(state_msg);
-            while (true)
-              delay(10);
-          } else {
+  //     OpenEVSE.getStatus([](int ret, uint8_t evse_state, uint32_t session_time, uint8_t pilot_state, uint32_t vflags)
+  //     {
+  //       if(RAPI_RESPONSE_OK == ret)
+  //       {
+  //         if(evse_state==OPENEVSE_STATE_CHARGING){
+  //           digitalWrite(LED2,HIGH);
+  //         }
+  //         else
+  //         {
+  //           digitalWrite(LED2,LOW);
+  //         }
+  //         String state_msg;
+  //         bool failed = false;
+  //         isCharging = false;
+  //         switch (evse_state) {
+  //           case OPENEVSE_STATE_STARTING:
+  //             state_msg = "開機中...."; break;
+  //           case OPENEVSE_STATE_NOT_CONNECTED:
+  //             state_msg = "車輛未連接"; 
+  //             isConnected = false;
+  //             break;
+  //           case OPENEVSE_STATE_CONNECTED:
+  //             state_msg = "車輛已連接"; 
+  //             isConnected = true;
+  //             break;
+  //           case OPENEVSE_STATE_CHARGING:
+  //             state_msg = "車輛充電中"; 
+  //             isCharging = true;
+  //             break;
+  //           case OPENEVSE_STATE_VENT_REQUIRED:
+  //             state_msg = "車輛需要放電"; break;
+  //           case OPENEVSE_STATE_DIODE_CHECK_FAILED:
+  //             state_msg = "Diode檢查失敗";
+  //             failed = true;
+  //             break;
+  //           case OPENEVSE_STATE_GFI_FAULT:
+  //             state_msg = "GFI檢查失敗";
+  //             failed = true;
+  //             break;
+  //           case OPENEVSE_STATE_NO_EARTH_GROUND:
+  //             state_msg = "接地檢查失敗";
+  //             failed = true;
+  //             break;
+  //           case OPENEVSE_STATE_STUCK_RELAY:
+  //             state_msg = "繼電器阻塞";
+  //             failed = true;
+  //             break;
+  //           case OPENEVSE_STATE_GFI_SELF_TEST_FAILED:
+  //             state_msg = "GFI自檢失敗";
+  //             failed = true;
+  //             break;
+  //           case OPENEVSE_STATE_OVER_TEMPERATURE:
+  //             state_msg = "溫度過高";
+  //             failed = true;
+  //             break;
+  //           case OPENEVSE_STATE_OVER_CURRENT:
+  //             state_msg = "電流過高";
+  //             failed = true;
+  //             break;
+  //           case OPENEVSE_STATE_SLEEPING:
+  //             state_msg = "睡眠中"; break;
+  //           case OPENEVSE_STATE_DISABLED:
+  //             state_msg = "設備已鎖定"; break;
+  //           default:
+  //             state_msg = "不明的狀態";
+  //             failed = true;
+  //             break;
+  //         }
+  //         if (failed) {
+  //           log_e("發生錯誤");
+  //           rapiSender.sendCmd("$FD");
+  //           scr.bootDrawFrame();
+  //           scr.bootDrawError(state_msg);
+  //           while (true)
+  //             delay(10);
+  //         } else {
             
-            // if ( (vflags & OPENEVSE_VFLAG_AUTH_LOCKED) == OPENEVSE_VFLAG_AUTH_LOCKED) {
-            //   isLocked = true;
-            // } else {
-            //   isLocked = false;
-            // }
+  //           // if ( (vflags & OPENEVSE_VFLAG_AUTH_LOCKED) == OPENEVSE_VFLAG_AUTH_LOCKED) {
+  //           //   isLocked = true;
+  //           // } else {
+  //           //   isLocked = false;
+  //           // }
 
-            scr.normalDrawPlugStatus(state_msg);
-            //scr.normalDrawDeviceStatus(isLocked);
-            // if (isLocked) {
-            //   scr.normalDrawDeviceStatus(true);
-            // } else {
+  //           scr.normalDrawPlugStatus(state_msg);
+  //           //scr.normalDrawDeviceStatus(isLocked);
+  //           // if (isLocked) {
+  //           //   scr.normalDrawDeviceStatus(true);
+  //           // } else {
 
-              // struct tm timeinfo;
-              // time_t now;
-              // getLocalTime(&timeinfo);
-              // time(&now);
-              /*
-              if (epochValidUntil <= now) {
-                rapiSender.sendCmd("$S4 1");
-                lastAuthenCard = "";
-              } else {
-                lock_countdown = epochValidUntil - now;
-                scr.normalDrawDeviceStatus(false, lock_countdown);
-              }
-              */
-            //}
-          }
-        }
-      });
-      OpenEVSE.getChargeCurrentAndVoltage([](int ret, double amps, double volts) {
-        if (RAPI_RESPONSE_OK == ret) {
+  //             // struct tm timeinfo;
+  //             // time_t now;
+  //             // getLocalTime(&timeinfo);
+  //             // time(&now);
+  //             /*
+  //             if (epochValidUntil <= now) {
+  //               rapiSender.sendCmd("$S4 1");
+  //               lastAuthenCard = "";
+  //             } else {
+  //               lock_countdown = epochValidUntil - now;
+  //               scr.normalDrawDeviceStatus(false, lock_countdown);
+  //             }
+  //             */
+  //           //}
+  //         }
+  //       }
+  //     });
+  //     OpenEVSE.getChargeCurrentAndVoltage([](int ret, double amps, double volts) {
+  //       if (RAPI_RESPONSE_OK == ret) {
           
           
-          if (lastVolts != volts) {
-            scr.normalDrawConcurrentVoltage(volts);
-          }
+  //         if (lastVolts != volts) {
+  //           scr.normalDrawConcurrentVoltage(volts);
+  //         }
 
-          if (lastAmps != amps) {
-            scr.normalDrawConcurrentAmp(amps);
-          }
-          lastVolts = volts;
-          lastAmps = amps;
-        }
-      });
-      OpenEVSE.getEnergy([](int ret, double session_wh, double total_kwh) {
-        if (RAPI_RESPONSE_OK == ret) {
-          if (lastSessionWatts != session_wh) {
-            scr.normalDrawConcurrentWatts(session_wh);
-          }
+  //         if (lastAmps != amps) {
+  //           scr.normalDrawConcurrentAmp(amps);
+  //         }
+  //         lastVolts = volts;
+  //         lastAmps = amps;
+  //       }
+  //     });
+  //     OpenEVSE.getEnergy([](int ret, double session_wh, double total_kwh) {
+  //       if (RAPI_RESPONSE_OK == ret) {
+  //         if (lastSessionWatts != session_wh) {
+  //           scr.normalDrawConcurrentWatts(session_wh);
+  //         }
 
-          /*
-          if (lastTotalWatts != total_kwh) {
-            scr.normalDrawTotalWatts(total_kwh);
-          }
-          */
+  //         /*
+  //         if (lastTotalWatts != total_kwh) {
+  //           scr.normalDrawTotalWatts(total_kwh);
+  //         }
+  //         */
 
-          lastSessionWatts = session_wh;
-          lastTotalWatts = total_kwh;
-        }
-      }); 
-      if (evseVersion == "") {
-        OpenEVSE.getVersion([](int ret, const char* firmware, const char* protocol) {
-          if (RAPI_RESPONSE_OK == ret) {
-            evseVersion = String(firmware);
-            evseProtocol = String(protocol);
-          }
-        });
-      }
-       /* 充電電流判定 */
-      OpenEVSE.getCurrentCapacity([](int ret, long min_current, long pilot, long max_configured_current, long max_hardware_current){
-        if (RAPI_RESPONSE_OK == ret) {
+  //         lastSessionWatts = session_wh;
+  //         lastTotalWatts = total_kwh;
+  //       }
+  //     }); 
+  //     if (evseVersion == "") {
+  //       OpenEVSE.getVersion([](int ret, const char* firmware, const char* protocol) {
+  //         if (RAPI_RESPONSE_OK == ret) {
+  //           evseVersion = String(firmware);
+  //           evseProtocol = String(protocol);
+  //         }
+  //       });
+  //     }
+  //      /* 充電電流判定 */
+  //     OpenEVSE.getCurrentCapacity([](int ret, long min_current, long pilot, long max_configured_current, long max_hardware_current){
+  //       if (RAPI_RESPONSE_OK == ret) {
           
-            maxAmps = max_configured_current;
-            scr.normalDrawTotalWatts(maxAmps);
-          }
-      });
-    }
-    else
-    {
+  //           maxAmps = max_configured_current;
+  //           scr.normalDrawTotalWatts(maxAmps);
+  //         }
+  //     });
+  //   }
+  //   else
+  //   {
 
-      OpenEVSE.begin(rapiSender, [](bool connected)
-      {
-        if(connected)
-        {
-          log_e("Connected to OpenEVSE\n");
-        } else {
-          log_e("OpenEVSE not responding or not connected");
-        }
-      });
-    }
-  }
+  //     OpenEVSE.begin(rapiSender, [](bool connected)
+  //     {
+  //       if(connected)
+  //       {
+  //         log_e("Connected to OpenEVSE\n");
+  //       } else {
+  //         log_e("OpenEVSE not responding or not connected");
+  //       }
+  //     });
+  //   }
+  // }
 
   // 溫度
-  sensors_event_t event;
+  log_e("START TEMP "); 
   tempSensor.getEvent(&event);
   scr.normalDrawTemp(event.temperature);
   scr.normalDrawDeviceStatus(isAuthByCard,!isLocked);
+  log_e("END TEMP "); 
   // if (voltageSensor1.getRmsVoltage()<150)
   // {
   //   voltageSensor1.setSensitivity(576);
@@ -597,94 +752,105 @@ void loop()
   // scr.normalDrawDateTime();
 
 
-  if (lastIsCharging == true && isCharging == false) {
-    // 從充電 -> 不充電 ==> 充電結束鎖定
-    log_e("From CHARGING to NOTCHARGING");
-    lastRecord.chargeStopAt = (millis()/1000);
-    lastRecord.usedWatt = lastSessionWatts;
-    locRec.append(lastRecord);
+  // if (lastIsCharging == true && isCharging == false) {
+  //   // 從充電 -> 不充電 ==> 充電結束鎖定
+  //   log_e("From CHARGING to NOTCHARGING");
+  //   lastRecord.chargeStopAt = (millis()/1000);
+  //   lastRecord.usedWatt = lastSessionWatts;
+  //   locRec.append(lastRecord);
     
-    locRec.dumpRecords();
+  //   locRec.dumpRecords();
 
-    if (locRec.isFull()) {
-      // 滿五次
-      rapiSender.sendCmd("$FD");
-      log_e("[Record] Disable on records full");
-    }
-  } else if (lastIsCharging == false && isCharging == true) {
-    // 從非充電 -> 充電 ==> 充電起始
-    log_e("From NOTCHARGING to CHARGING");
-    lastRecord.chargeStartAt = (millis()/1000);
-    lastRecord.cardId = lastAuthenCard;
-  } else {
-    //log_e("CHARGING Status= %s",isCharging? "true": "false" );
-  }
-  lastIsCharging = isCharging;
+  //   if (locRec.isFull()) {
+  //     // 滿五次
+  //     rapiSender.sendCmd("$FD");
+  //     log_e("[Record] Disable on records full");
+  //   }
+  // } else if (lastIsCharging == false && isCharging == true) {
+  //   // 從非充電 -> 充電 ==> 充電起始
+  //   log_e("From NOTCHARGING to CHARGING");
+  //   lastRecord.chargeStartAt = (millis()/1000);
+  //   lastRecord.cardId = lastAuthenCard;
+  // } else {
+  //   //log_e("CHARGING Status= %s",isCharging? "true": "false" );
+  // }
+  // lastIsCharging = isCharging;
 
-  //連接到電動車
-  if (lastIsConnected == true && isConnected == false) {
-    log_e("Plug From CONNECTED to DISCONNECTED");
-    isAuthByCard = false;
-    scr.normalDrawDeviceStatus(isAuthByCard,!isLocked);
-    lastAuthenCard = "";
-    //rapiSender.sendCmd("$S4 0");
-  } else if (lastIsConnected == false && isConnected == true) {
-    log_e("Plug From DISCONNECT to CONNECTED");
-  } else {
-    //log_e("Plug Status= %s", isConnected? "true": "false" );
-  }
-  lastIsConnected = isConnected;
+  // //連接到電動車
+  // if (lastIsConnected == true && isConnected == false) {
+  //   log_e("Plug From CONNECTED to DISCONNECTED");
+  //   isAuthByCard = false;
+  //   scr.normalDrawDeviceStatus(isAuthByCard,!isLocked);
+  //   lastAuthenCard = "";
+  //   //rapiSender.sendCmd("$S4 0");
+  // } else if (lastIsConnected == false && isConnected == true) {
+  //   log_e("Plug From DISCONNECT to CONNECTED");
+  // } else {
+  //   //log_e("Plug Status= %s", isConnected? "true": "false" );
+  // }
+  // lastIsConnected = isConnected;
 
-  // 斷線後無論如何都是 8A
-  if (((millis()/1000) - lastConnectTime > DISCONNECT_INTERVAL) && isConnectEMS) {
-    rapiSender.sendCmd("$SC 8 V");
-    log_e("[WARNING] Drop load to 8A by DISCONNECT detection");
-    isConnectEMS = false;
-  }
-  else if(((millis()/1000) - lastConnectTime) < DISCONNECT_INTERVAL)
+  // // 斷線後無論如何都是 8A
+  // if (((millis()/1000) - lastConnectTime > DISCONNECT_INTERVAL) && isConnectEMS) {
+  //   rapiSender.sendCmd("$SC 8 V");
+  //   log_e("[WARNING] Drop load to 8A by DISCONNECT detection");
+  //   isConnectEMS = false;
+  // }
+  // else if(((millis()/1000) - lastConnectTime) < DISCONNECT_INTERVAL)
+  // {
+  //   isConnectEMS = true;
+  // }
+  log_e("START KEYSCAN %d",millis()); 
+  uint16_t buttom =  keyscan();
+  log_e("END KEYSCAN %d",millis());
+
+  if(buttom)
   {
-    isConnectEMS = true;
+    log_e("Buttom is : %d",buttom);
+    log_e("START");
+    scr.normalDrawMenu(buttom);
+    log_e("END");
   }
 
-  if ( !mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial() || !isConnected || isLocked) {
-    delay(50);
-    return;
-  }
+  // if ( !mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial() || !isConnected || isLocked) {
+  //   delay(50);
+  //   return;
+  // }
 
-  String card_uuid = mfrc522.GetCardIdString();
-  log_e("Card ID: %s", card_uuid);
-  bool checked = false;
-  for (int x=0; x<10; x++) {
-    if (setting.validTag[x].length()==0) break;
-    if (setting.validTag[x] == card_uuid) {
-      checked = true;
-    }
-  }
-  //checked = true;
-  if (checked) {
-    log_e("Card ID: %s is valid", card_uuid);
-    buzzer.Success();
-    // 跟上一張一樣卡號的話, 鎖上
-    if (card_uuid == lastAuthenCard) {
-      log_e("From UNLOCK to LOCK");
-      isAuthByCard = false;
-      scr.normalDrawDeviceStatus(isAuthByCard,!isLocked);
-      rapiSender.sendCmd("$S4 1"); 
-      lastAuthenCard = "";
-      //epochValidUntil=0;
-    } else {
-      log_e("From LOCK to UNLOCK");
-      isAuthByCard = true;
-      scr.normalDrawDeviceStatus(isAuthByCard,!isLocked);
-      rapiSender.sendCmd("$S4 0");
-      //epochValidUntil = (millis()/1000)+180;
-      lastAuthenCard = card_uuid;
-    }
-  } else {
-    log_e("Card ID: %s is invalid", card_uuid);
-    buzzer.Fail();
-    epochValidUntil=0;
-  }
+  // String card_uuid = mfrc522.GetCardIdString();
+  // log_e("Card ID: %s", card_uuid);
+  // bool checked = false;
+  // for (int x=0; x<10; x++) {
+  //   if (setting.validTag[x].length()==0) break;
+  //   if (setting.validTag[x] == card_uuid) {
+  //     checked = true;
+  //   }
+  // }
+  // //checked = true;
+  // if (checked) {
+  //   log_e("Card ID: %s is valid", card_uuid);
+  //   buzzer.Success();
+  //   // 跟上一張一樣卡號的話, 鎖上
+  //   if (card_uuid == lastAuthenCard) {
+  //     log_e("From UNLOCK to LOCK");
+  //     isAuthByCard = false;
+  //     scr.normalDrawDeviceStatus(isAuthByCard,!isLocked);
+  //     rapiSender.sendCmd("$S4 1"); 
+  //     lastAuthenCard = "";
+  //     //epochValidUntil=0;
+  //   } else {
+  //     log_e("From LOCK to UNLOCK");
+  //     isAuthByCard = true;
+  //     scr.normalDrawDeviceStatus(isAuthByCard,!isLocked);
+  //     rapiSender.sendCmd("$S4 0");
+  //     //epochValidUntil = (millis()/1000)+180;
+  //     lastAuthenCard = card_uuid;
+  //   }
+  // } else {
+  //   log_e("Card ID: %s is invalid", card_uuid);
+  //   buzzer.Fail();
+  //   epochValidUntil=0;
+  // }
 
-  vTaskDelay(1000);
+  // vTaskDelay(1000);
 }

@@ -25,6 +25,8 @@ class Screen {
         void normalDrawDeviceStatus(bool lockbycard, bool unlockbyems);
         void normalDrawDeviceWait();
         void normalDrawDeviceMessage(String message, bool isError);
+
+        void normalDrawMenu(uint16_t key);
         
     private:
         Adafruit_RA8875 _tft;
